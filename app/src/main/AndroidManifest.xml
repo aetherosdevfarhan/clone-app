@@ -29,12 +29,15 @@
         <activity
             android:name=".GuestInfoActivity"
             android:exported="false" />
+        <activity
+            android:name=".LogViewActivity"
+            android:exported="false" />
 
         <!--
           Pool of stub activities that guest activities get substituted
           into (see StubSlots / GuestInstrumentation). Each is a distinct
           component with its own task affinity, which is what lets up to
-          StubSlots.SLOT_COUNT (6) clones stay open side by side in
+          StubSlots.SLOT_COUNT (5) clones stay open side by side in
           Recents instead of collapsing into a single task. To raise the
           limit, add more of these and bump StubSlots.SLOT_COUNT and
           StubSlots.isStubClassName() to match.
@@ -68,12 +71,6 @@
             android:exported="false"
             android:launchMode="singleTask"
             android:taskAffinity="com.mycloner.app.clone5"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
-        <activity
-            android:name=".StubActivity6"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.mycloner.app.clone6"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
     </application>
 </manifest>
