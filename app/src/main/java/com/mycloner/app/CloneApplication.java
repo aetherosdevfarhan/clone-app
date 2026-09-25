@@ -7,5 +7,6 @@ public class CloneApplication extends Application {
     protected void attachBaseContext(android.content.Context base) {
         super.attachBaseContext(base);
         HiddenApi.exempt();
+        CrashLog.install(base);
     }
 }
