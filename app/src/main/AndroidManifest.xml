@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".CloneApplication"
+        android:label="Clone App"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme"
+        android:largeHeap="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".PickerActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".GuestInfoActivity"
+            android:exported="false" />
+
+        <!--
+          Pool of stub activities that guest activities get substituted
+          into (see StubSlots / GuestInstrumentation). Each is a distinct
+          component with its own task affinity, which is what lets up to
+          StubSlots.SLOT_COUNT (6) clones stay open side by side in
+          Recents instead of collapsing into a single task. To raise the
+          limit, add more of these and bump StubSlots.SLOT_COUNT and
+          StubSlots.isStubClassName() to match.
+        -->
+        <activity
+            android:name=".StubActivity1"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone1"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+        <activity
+            android:name=".StubActivity2"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone2"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+        <activity
+            android:name=".StubActivity3"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone3"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+        <activity
+            android:name=".StubActivity4"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone4"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+        <activity
+            android:name=".StubActivity5"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone5"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+        <activity
+            android:name=".StubActivity6"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.mycloner.app.clone6"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+    </application>
+</manifest>
