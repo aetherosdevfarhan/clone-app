@@ -50,9 +50,17 @@ public class GuestInstrumentation extends Instrumentation {
                     Class<?> real = Class.forName(targetClass, false, guestLoader);
                     Activity instance = (Activity) real.newInstance();
                     Log.i(TAG, "substituted " + targetClass + " for stub (clone " + cloneId + ")");
+                    try {
+                        CrashLog.checkpoint(getInstrumentationContext(),
+                                "clone " + cloneId + ": substituted " + targetClass + " for stub");
+                    } catch (Throwable ignored) {}
                     return instance;
                 } catch (Throwable t) {
                     Log.e(TAG, "failed to instantiate guest activity " + targetClass, t);
+                    try {
+                        CrashLog.logCaught(getInstrumentationContext(),
+                                "failed to instantiate guest activity " + targetClass + " (clone " + cloneId + ")", t);
+                    } catch (Throwable ignored) {}
                 }
             }
         }
@@ -72,36 +80,44 @@ public class GuestInstrumentation extends Instrumentation {
     }
 
     private void patchBaseContext(Activity activity) {
+        Context hostCtx = null;
+        String cloneId = null;
         try {
+            hostCtx = getInstrumentationContext();
             Intent intent = activity.getIntent();
-            String cloneId = intent == null ? null
+            cloneId = intent == null ? null
                     : intent.getStringExtra(LaunchRegistry.EXTRA_CLONE_ID);
             if (cloneId == null) {
                 cloneId = LaunchRegistry.cloneIdForLoader(
                         activity.getClass().getClassLoader());
             }
             if (cloneId == null) return;
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": patchBaseContext start");
 
             Context guestContext = LaunchRegistry.guestContextFor(cloneId);
-            if (guestContext == null) return;
+            if (guestContext == null) {
+                CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": no guestContext registered, aborting patch");
+                return;
+            }
 
             Field mBase = ContextWrapper.class.getDeclaredField("mBase");
             mBase.setAccessible(true);
             mBase.set(activity, guestContext);
-            Log.i(TAG, "patched base context for clone " + cloneId);
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": base context patched");
 
-            Application guestApp = ensureGuestApplication(cloneId);
+            Application guestApp = ensureGuestApplication(hostCtx, cloneId);
             if (guestApp != null) {
                 try {
                     Field mApplication = Activity.class.getDeclaredField("mApplication");
                     mApplication.setAccessible(true);
                     mApplication.set(activity, guestApp);
-                    Log.i(TAG, "patched application for clone " + cloneId);
+                    CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": mApplication patched");
                 } catch (Throwable t) {
-                    Log.e(TAG, "failed to patch mApplication for clone " + cloneId, t);
+                    CrashLog.logCaught(hostCtx, "failed to patch mApplication for clone " + cloneId, t);
                 }
             }
         } catch (Throwable t) {
+            if (hostCtx != null) CrashLog.logCaught(hostCtx, "patchBaseContext failed (clone " + cloneId + ")", t);
             Log.e(TAG, "patchBaseContext failed", t);
         }
     }
@@ -119,7 +135,7 @@ public class GuestInstrumentation extends Instrumentation {
      * never registers - failures here are caught and logged, not fatal to
      * the activity launch.
      */
-    private Application ensureGuestApplication(String cloneId) {
+    private Application ensureGuestApplication(Context hostCtx, String cloneId) {
         Application existing = LaunchRegistry.appFor(cloneId);
         if (existing != null) return existing;
         try {
@@ -131,20 +147,40 @@ public class GuestInstrumentation extends Instrumentation {
             Class<?> appClass = appClassName != null
                     ? Class.forName(appClassName, false, loader)
                     : Application.class;
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": instantiating " + appClass.getName());
             Application app = (Application) appClass.newInstance();
 
             // Application.attach(Context) is package-private; it sets up
             // mLoadedApk/mBase and is what the system itself calls before
             // Application.onCreate() during a normal app launch.
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": attach() start");
             Method attach = Application.class.getDeclaredMethod("attach", Context.class);
             attach.setAccessible(true);
             attach.invoke(app, guestContext);
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": attach() done");
 
+            // Real process startup runs every declared <provider>'s onCreate()
+            // BEFORE Application.onCreate() - a lot of SDK auto-init (androidx
+            // App Startup, Firebase, WorkManager) depends on that order. Do the
+            // same here, or code in onCreate() can hang waiting on init that
+            // never ran.
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": provider init start");
+            CloneEntry entry = CloneStore.byId(hostCtx, cloneId);
+            if (entry != null) {
+                GuestProviders.initAll(hostCtx, guestContext, loader, entry.pkg, cloneId);
+            }
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": provider init done");
+
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": Application.onCreate() start");
             app.onCreate();
+            CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": Application.onCreate() done");
+
             LaunchRegistry.registerApp(cloneId, app);
             Log.i(TAG, "guest Application created for clone " + cloneId + " (" + appClass.getName() + ")");
             return app;
         } catch (Throwable t) {
+            CrashLog.logCaught(hostCtx, "guest Application init failed for clone " + cloneId
+                    + " - continuing without it", t);
             Log.e(TAG, "guest Application init failed for clone " + cloneId
                     + " - continuing without it", t);
             return null;
