@@ -6,7 +6,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.os.Process;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -18,6 +17,12 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Reads this process's own logcat output. This works without any special
+ * permission because Android lets an app read its own PID's log lines -
+ * and since the guest (Discord) runs inside this same process, its
+ * android.util.Log output shows up here too.
+ */
 public class LogViewActivity extends Activity {
     private String log = "";
 
@@ -84,14 +89,14 @@ public class LogViewActivity extends Activity {
     private String capture() {
         StringBuilder sb = new StringBuilder();
         try {
-            int pid = Process.myPid();
+            int pid = android.os.Process.myPid();
             Process proc = Runtime.getRuntime().exec(
                     new String[]{"logcat", "-d", "-v", "time", "--pid=" + pid});
             BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream()));
             List<String> lines = new ArrayList<>();
             String line;
             while ((line = r.readLine()) != null) lines.add(line);
-            int from = Math.max(0, lines.size() - 600);
+            int from = Math.max(0, lines.size() - 600); // most recent ~600 lines
             for (int i = from; i < lines.size(); i++) sb.append(lines.get(i)).append('\n');
             if (lines.isEmpty()) {
                 sb.append("No lines came back. On some ROMs an app can't read even its ")
