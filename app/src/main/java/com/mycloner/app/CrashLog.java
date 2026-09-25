@@ -69,6 +69,28 @@ public class CrashLog {
         } catch (Throwable ignored) {}
     }
 
+    /**
+     * Re-claims Thread's default uncaught-exception-handler slot. Some SDKs
+     * (Firebase Crashlytics in particular) install their own handler during
+     * init and do NOT chain back to whatever was set before them - which
+     * silently steals crashes away from this logger with no trace at all.
+     * Call this right after guest Application.onCreate() (and ideally again
+     * right before the guest Activity's onCreate()) so our handler is back
+     * on top, still chaining to whatever is currently installed underneath.
+     */
+    public static synchronized void reassert(Context appContext) {
+        Context ctx = appContext.getApplicationContext();
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        write(ctx, "reasserting crash handler (previous: "
+                + (previous == null ? "null" : previous.getClass().getName()) + ")");
+        Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            try {
+                append(ctx, thread, ex);
+            } catch (Throwable ignored) {}
+            if (previous != null) previous.uncaughtException(thread, ex);
+        });
+    }
+
     public static String read(Context c) {
         File f = new File(c.getFilesDir(), FILE_NAME);
         if (!f.exists()) return "";
