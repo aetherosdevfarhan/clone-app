@@ -29,11 +29,11 @@ public class GuestLoader {
     public static class Result {
         public final List<Step> steps = new ArrayList<>();
         public String verdict = "";
-        public Context guestContext;
+        public Context guestContext;   // storage-isolated (CloneContext), ready to use as an Activity's base
         public ClassLoader loader;
         public Class<?> launcherClass;
         public String launcherName;
-        public String appClassName;
+        public String appClassName; // ApplicationInfo.className, null = plain android.app.Application
         void add(String n, int s, String d) { steps.add(new Step(n, s, d)); }
     }
 
@@ -43,6 +43,7 @@ public class GuestLoader {
         return m;
     }
 
+    /** entry identifies which clone slot this is (its id drives storage isolation). */
     public static Result load(Context host, CloneEntry entry) {
         String pkg = entry.pkg;
         long t0 = System.currentTimeMillis();
@@ -97,7 +98,7 @@ public class GuestLoader {
                         note = " (activity-alias -> " + resolvedName + ")";
                     }
                 } catch (Throwable ignored) {
-                    // Couldn't resolve - fall back to declared name below,
+                    // Couldn't resolve - fall back to the declared name below,
                     // the Launcher class step will report the real failure.
                 }
                 r.launcherName = resolvedName;
@@ -107,7 +108,7 @@ public class GuestLoader {
             r.add("Launcher activity", FAIL, err(e));
         }
 
-        // Guest class loader
+        // Guest class loader (+ raw package context, before storage isolation is applied)
         ClassLoader loader = null;
         Context rawGuestContext = null;
         String how = "";
@@ -122,6 +123,10 @@ public class GuestLoader {
         }
         if (loader == null) {
             try {
+                // Base APK alone isn't enough for split/bundled apps - the
+                // launcher class (or classes it touches) can live in a
+                // split. Chain every split dex onto the path so we don't
+                // misreport a class-not-found that's really a missing split.
                 StringBuilder dexPath = new StringBuilder(ai.sourceDir);
                 if (ai.splitSourceDirs != null) {
                     for (String split : ai.splitSourceDirs) {
@@ -149,12 +154,16 @@ public class GuestLoader {
         }
         r.loader = loader;
 
+        // Wrap whatever context we have (or the host itself, as a last resort) so
+        // file/db/prefs calls redirect into this clone's own isolated folder instead
+        // of the guest's real - and inaccessible - data directory.
         Context storageBase = rawGuestContext != null ? rawGuestContext : host;
         r.guestContext = new CloneContext(storageBase, host, entry.id);
         r.add("Storage isolation", OK,
                 "files/prefs/db redirected under clones/" + entry.id
                         + (rawGuestContext == null ? " (built on host context - resources may not match guest)" : ""));
 
+        // Load the launcher class (loads it, does NOT run any guest code)
         if (loader != null && r.launcherName != null) {
             try {
                 Class<?> c = Class.forName(r.launcherName, false, loader);
@@ -171,6 +180,7 @@ public class GuestLoader {
             }
         }
 
+        // Resources
         try {
             Resources res = pm.getResourcesForApplication(ai);
             String d = "resources opened";
@@ -187,4 +197,10 @@ public class GuestLoader {
         for (Step s : r.steps) {
             if (s.state == FAIL) { firstFail = s; break; }
         }
-        r.verd
+        r.verdict = firstFail == null
+                ? "Ready: guest code, resources, and isolated storage are set up. Launch is still experimental."
+                : "Blocked at \"" + firstFail.name + "\". Copy the report and send it to me.";
+        r.add("Time", INFO, (System.currentTimeMillis() - t0) + " ms");
+        return r;
+    }
+}
