@@ -17,12 +17,6 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Reads this process's own logcat output. This works without any special
- * permission because Android lets an app read its own PID's log lines -
- * and since the guest (Discord) runs inside this same process, its
- * android.util.Log output shows up here too.
- */
 public class LogViewActivity extends Activity {
     private String log = "";
 
@@ -58,7 +52,25 @@ public class LogViewActivity extends Activity {
         root.addView(sv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        TextView copy = Ui.text(this, "Copy log", 15, R.color.on_accent, true);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(8), dp(16), dp(16));
+
+        TextView clear = Ui.text(this, "Clear crash log", 14, R.color.text, true);
+        clear.setGravity(Gravity.CENTER);
+        clear.setPadding(dp(16), dp(14), dp(16), dp(14));
+        clear.setBackground(Ui.shape(this, R.color.card, 16));
+        clear.setOnClickListener(v -> {
+            CrashLog.clear(this);
+            Toast.makeText(this, "Crash log cleared - relaunch the clone to test again", Toast.LENGTH_SHORT).show();
+            recreate();
+        });
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        clp.rightMargin = dp(8);
+        row.addView(clear, clp);
+
+        TextView copy = Ui.text(this, "Copy all", 14, R.color.on_accent, true);
         copy.setGravity(Gravity.CENTER);
         copy.setPadding(dp(16), dp(14), dp(16), dp(14));
         copy.setBackground(Ui.shape(this, R.color.accent, 16));
@@ -67,27 +79,33 @@ public class LogViewActivity extends Activity {
             cm.setPrimaryClip(ClipData.newPlainText("log", log));
             Toast.makeText(this, "Log copied", Toast.LENGTH_SHORT).show();
         });
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cp.leftMargin = dp(16);
-        cp.rightMargin = dp(16);
-        cp.bottomMargin = dp(16);
-        cp.topMargin = dp(8);
-        root.addView(copy, cp);
+        LinearLayout.LayoutParams cop = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        cop.leftMargin = dp(8);
+        row.addView(copy, cop);
 
+        root.addView(row);
         setContentView(root);
 
         new Thread(() -> {
             String captured = capture();
             runOnUiThread(() -> {
                 log = captured;
-                tv.setText(captured.isEmpty() ? "(no log lines captured)" : captured);
+                tv.setText(captured.isEmpty() ? "(nothing captured yet)" : captured);
             });
         }).start();
     }
 
     private String capture() {
         StringBuilder sb = new StringBuilder();
+
+        sb.append("=== Crash log (in-process, reliable) ===\n");
+        String crashes = CrashLog.read(this);
+        sb.append(crashes.isEmpty()
+                ? "(no uncaught exceptions recorded - if Discord is hanging with no crash, that's expected here)\n"
+                : crashes);
+
+        sb.append("\n=== logcat --pid=<self> (best effort, may be blocked on this ROM) ===\n");
         try {
             int pid = android.os.Process.myPid();
             Process proc = Runtime.getRuntime().exec(
@@ -96,12 +114,11 @@ public class LogViewActivity extends Activity {
             List<String> lines = new ArrayList<>();
             String line;
             while ((line = r.readLine()) != null) lines.add(line);
-            int from = Math.max(0, lines.size() - 600); // most recent ~600 lines
-            for (int i = from; i < lines.size(); i++) sb.append(lines.get(i)).append('\n');
+            int from = Math.max(0, lines.size() - 400);
             if (lines.isEmpty()) {
-                sb.append("No lines came back. On some ROMs an app can't read even its ")
-                        .append("own logcat. If this stays empty, connect the phone to a PC ")
-                        .append("and run: adb logcat --pid=").append(pid);
+                sb.append("(no lines - either nothing logged, or this device blocks logcat exec for apps)\n");
+            } else {
+                for (int i = from; i < lines.size(); i++) sb.append(lines.get(i)).append('\n');
             }
         } catch (Throwable t) {
             sb.append("Could not run logcat: ").append(t).append('\n');
