@@ -96,6 +96,16 @@ public class GuestInfoActivity extends Activity {
         lp2.topMargin = dp(16);
         body.addView(launch, lp2);
 
+        TextView viewLog = Ui.text(this, "View device log", 15, R.color.text, true);
+        viewLog.setGravity(Gravity.CENTER);
+        viewLog.setPadding(dp(16), dp(14), dp(16), dp(14));
+        viewLog.setBackground(Ui.shape(this, R.color.card, 16));
+        viewLog.setOnClickListener(v -> openLog());
+        LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp3.topMargin = dp(10);
+        body.addView(viewLog, lp3);
+
         TextView copy = Ui.text(this, "Copy report", 15, R.color.on_accent, true);
         copy.setGravity(Gravity.CENTER);
         copy.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -199,12 +209,16 @@ public class GuestInfoActivity extends Activity {
 
         LaunchRegistry.register(entry.id, lastResult.loader, lastResult.guestContext, lastResult.appClassName);
 
-        android.content.ComponentName stub = StubSlots.componentFor(this, entry.id);
+        android.content.ComponentName slot = StubSlots.componentFor(this, entry.id);
         android.content.Intent i = new android.content.Intent();
-        i.setComponent(stub);
+        i.setComponent(slot);
         i.putExtra(LaunchRegistry.EXTRA_TARGET_CLASS, lastResult.launcherName);
         i.putExtra(LaunchRegistry.EXTRA_CLONE_ID, entry.id);
         i.putExtra(LaunchRegistry.EXTRA_TARGET_PKG, entry.pkg);
         startActivity(i);
+    }
+
+    private void openLog() {
+        startActivity(new android.content.Intent(this, LogViewActivity.class));
     }
 }
