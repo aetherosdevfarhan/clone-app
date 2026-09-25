@@ -70,13 +70,55 @@ public class GuestInstrumentation extends Instrumentation {
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         patchBaseContext(activity);
-        base.callActivityOnCreate(activity, icicle);
+        checkpointSafe("about to call guest onCreate() for " + activity.getClass().getName());
+        try {
+            base.callActivityOnCreate(activity, icicle);
+            checkpointSafe("guest onCreate() returned normally for " + activity.getClass().getName());
+        } catch (Throwable t) {
+            logGuestCrash(activity, t);
+            throw rethrow(t);
+        }
     }
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, android.os.PersistableBundle persistentState) {
         patchBaseContext(activity);
-        base.callActivityOnCreate(activity, icicle, persistentState);
+        checkpointSafe("about to call guest onCreate() for " + activity.getClass().getName());
+        try {
+            base.callActivityOnCreate(activity, icicle, persistentState);
+            checkpointSafe("guest onCreate() returned normally for " + activity.getClass().getName());
+        } catch (Throwable t) {
+            logGuestCrash(activity, t);
+            throw rethrow(t);
+        }
+    }
+
+    private void checkpointSafe(String msg) {
+        try {
+            CrashLog.checkpoint(getInstrumentationContext(), msg);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Wraps the guest Activity's onCreate() call directly, so we catch the
+     * crash ourselves in the call stack rather than relying solely on the
+     * async default uncaught-exception handler - which the guest app's own
+     * SDKs (Firebase Crashlytics in particular) can silently steal from us.
+     * Always rethrows afterward so framework behavior is unchanged.
+     */
+    private void logGuestCrash(Activity activity, Throwable t) {
+        try {
+            Context hostCtx = getInstrumentationContext();
+            String cloneId = activity.getIntent() != null
+                    ? activity.getIntent().getStringExtra(LaunchRegistry.EXTRA_CLONE_ID) : null;
+            CrashLog.logCaught(hostCtx, "guest activity onCreate() threw (clone " + cloneId + ")", t);
+        } catch (Throwable ignored) {}
+    }
+
+    private RuntimeException rethrow(Throwable t) {
+        if (t instanceof RuntimeException) return (RuntimeException) t;
+        if (t instanceof Error) throw (Error) t;
+        return new RuntimeException(t);
     }
 
     private void patchBaseContext(Activity activity) {
@@ -174,6 +216,7 @@ public class GuestInstrumentation extends Instrumentation {
             CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": Application.onCreate() start");
             app.onCreate();
             CrashLog.checkpoint(hostCtx, "clone " + cloneId + ": Application.onCreate() done");
+            CrashLog.reassert(hostCtx); // reclaim the handler slot in case the guest app (e.g. Firebase) replaced it
 
             LaunchRegistry.registerApp(cloneId, app);
             Log.i(TAG, "guest Application created for clone " + cloneId + " (" + appClass.getName() + ")");
