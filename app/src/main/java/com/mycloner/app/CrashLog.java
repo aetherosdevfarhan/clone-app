@@ -18,13 +18,19 @@ public class CrashLog {
         if (installed) return;
         installed = true;
         final Context ctx = appContext.getApplicationContext();
+        final Thread mainThread = ctx.getMainLooper().getThread();
         final Thread.UncaughtExceptionHandler original = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
             try {
                 append(ctx, thread, ex);
             } catch (Throwable ignored) {
             }
-            if (original != null) original.uncaughtException(thread, ex);
+            if (thread == mainThread) {
+                if (original != null) original.uncaughtException(thread, ex);
+            } else {
+                write(ctx, "SUPPRESSED (background thread, not fatal): " + thread.getName()
+                        + " - " + ex.getClass().getName() + ": " + ex.getMessage());
+            }
         });
     }
 
@@ -77,17 +83,35 @@ public class CrashLog {
      * Call this right after guest Application.onCreate() (and ideally again
      * right before the guest Activity's onCreate()) so our handler is back
      * on top, still chaining to whatever is currently installed underneath.
+     *
+     * Also changes what happens after logging: Android's default behavior is
+     * to kill the WHOLE process for an uncaught exception on ANY thread, main
+     * or background. In practice a lot of guest apps run non-essential
+     * background work (vendor "bonus feature" code, analytics, cleanup jobs)
+     * that can throw for reasons specific to running inside this host process
+     * (e.g. a null Context some OEM helper expected to be set elsewhere).
+     * Killing the whole clone over one broken background task, with the
+     * symptom being "the app just closes" and no other clue, isn't useful -
+     * so background-thread crashes are logged and swallowed instead of
+     * propagated. A crash on the main/UI thread still propagates normally,
+     * since that's a real, user-visible problem worth surfacing as such.
      */
     public static synchronized void reassert(Context appContext) {
         Context ctx = appContext.getApplicationContext();
         Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         write(ctx, "reasserting crash handler (previous: "
                 + (previous == null ? "null" : previous.getClass().getName()) + ")");
+        Thread mainThread = ctx.getMainLooper().getThread();
         Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
             try {
                 append(ctx, thread, ex);
             } catch (Throwable ignored) {}
-            if (previous != null) previous.uncaughtException(thread, ex);
+            if (thread == mainThread) {
+                if (previous != null) previous.uncaughtException(thread, ex);
+            } else {
+                write(ctx, "SUPPRESSED (background thread, not fatal): " + thread.getName()
+                        + " - " + ex.getClass().getName() + ": " + ex.getMessage());
+            }
         });
     }
 
